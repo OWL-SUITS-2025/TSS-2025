@@ -2,9 +2,9 @@
 {
 	"eva": {
 		"started": true,
-		"paused": true,
+		"paused": false,
 		"completed": true,
-		"total_time": 17,
+		"total_time": 24,
 		"uia": {
 			"started": false,
 			"completed": true,
