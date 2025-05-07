@@ -12,7 +12,8 @@
 
 // Helper functions
 size_t rover_index();
-
+float prPrevX = 0;
+float prPrevY = 0;
 ///////////////////////////////////////////////////////////////////////////////////
 //                                 Functions
 ///////////////////////////////////////////////////////////////////////////////////
@@ -41,19 +42,19 @@ void handle_udp_get_request(unsigned int command, unsigned char* data, struct ba
         printf("Getting IMU.\n");
         udp_get_imu(command, data);
     }
-    else if(command < 26){
-        printf("Getting ROVER.\n");
+    else if(command < 31){
+        printf("Getting LTV.\n");
         udp_get_rover(command, data);
     }
-    else if(command < 48){
+    else if(command < 53){
         printf("Getting SPEC.\n");
         udp_get_spec(command, data);
     }
-    else if(command < 58){
+    else if(command < 63){
         printf("Getting UIA.\n");
         udp_get_uia(command, data);
     }
-    else if(command < 103){
+    else if(command < 108){
         printf("Getting Telemetry.\n");
         unsigned int team_number = 0;
         float fl;
@@ -63,7 +64,7 @@ void handle_udp_get_request(unsigned int command, unsigned char* data, struct ba
 
         udp_get_telemetry(command, team_number, data);
     }
-    else if(command < 119){
+    else if(command < 124){
         printf("Getting EVA.\n");
         unsigned int team_number = 0;
         float fl;
@@ -73,7 +74,7 @@ void handle_udp_get_request(unsigned int command, unsigned char* data, struct ba
 
         udp_get_eva(command, team_number, data);
     }
-    else if(command < 167){
+    else if(command < 172){
         printf("Getting Rover Telemetry.\n");
 
         udp_get_pr_telemetry(command, data, backend);
@@ -374,7 +375,7 @@ bool update_uia(char* request_content, struct uia_data_t* uia){
 
 bool udp_get_uia(unsigned int command, unsigned char* data){
 
-    int off_set = command - 48;
+    int off_set = command - 53;
     //Open file
     FILE* fp = fopen("public/json_data/UIA.json", "r");
     if (fp == NULL) { 
@@ -767,23 +768,36 @@ bool udp_get_imu(unsigned int command, unsigned char* data){
 }
 
 // -------------------------- ROVER --------------------------------
-bool build_json_rover(struct rover_data_t* rover){
+bool build_json_rover(struct rover_data_t* rover){ 
 
     const char format_buffer[512] = 
     "\n{"
 	"\n\t\"rover\": {"
 	"\n\t\t\"posx\": %f,"
 	"\n\t\t\"posy\": %f,"
-	"\n\t\t\"qr_id\": %d"
+	"\n\t\t\"poi_1_x\": %f,"
+    "\n\t\t\"poi_1_y\": %f,"
+	"\n\t\t\"poi_2_x\": %f,"
+    "\n\t\t\"poi_2_y\": %f,"
+	"\n\t\t\"poi_3_x\": %f,"
+    "\n\t\t\"poi_3_y\": %f,"
+    "\n\t\t\"ping\": %s"
 	"\n\t}"
     "\n}";
-
     char out_buffer[512];
     sprintf(out_buffer, format_buffer, 
         rover->pos_x,
-        rover->pos_y, 
-        rover->prev_qr_scan
+        rover->pos_y,
+        rover->poi_1_x,
+        rover->poi_1_y,
+        rover->poi_2_x,
+        rover->poi_2_y,
+        rover->poi_3_x,
+        rover->poi_3_y, 
+        rover->ping ? "true" : "false"
     );
+
+   
     
     // Write bytes to file
     FILE* fd_rover = fopen("public/json_data/ROVER.json", "w");
@@ -796,18 +810,29 @@ bool build_json_rover(struct rover_data_t* rover){
 
 bool update_rover(char* request_content, struct rover_data_t* rover){
 
-    if(strncmp(request_content, "qr=", strlen("qr=")) == 0) {
-        request_content += strlen("qr=");
-        rover->prev_qr_scan = atoi(request_content);
-        printf("ROVER QR: %d\n", rover->prev_qr_scan);
-    } else if(strncmp(request_content, "posx=", strlen("posx=")) == 0) {
+    // if(strncmp(request_content, "qr=", strlen("qr=")) == 0) {
+    //     request_content += strlen("qr=");
+    //     rover->prev_qr_scan = atoi(request_content);
+    //     printf("ROVER QR: %d\n", rover->prev_qr_scan);
+    //} else 
+    if(strncmp(request_content, "posx=", strlen("posx=")) == 0) {
         request_content += strlen("posx=");
         rover->pos_x = atof(request_content);
         printf("ROVER Pos x: %f\n", rover->pos_x);
     } else if(strncmp(request_content, "posy=", strlen("posy=")) == 0) {
         request_content += strlen("posy=");
         rover->pos_y = atof(request_content);
-        printf("ROVER Pos x: %f\n", rover->pos_y);
+        printf("ROVER Pos y: %f\n", rover->pos_y);
+    } else if(strncmp(request_content, "ping=", strlen("ping=")) == 0) {
+        
+        rover->poi_1_x = ROVER_POI_1_X;
+        rover->poi_1_y = ROVER_POI_1_Y;
+        rover->poi_2_x = ROVER_POI_2_X;
+        rover->poi_2_y = ROVER_POI_2_Y; 
+        rover->poi_3_x = ROVER_POI_3_X;
+        rover->poi_3_y = ROVER_POI_3_Y;
+        rover->ping    = request_content += strlen("ping=");
+
     } else {
         return false;
     }
@@ -955,7 +980,7 @@ bool update_spec(char* request_content, struct spec_data_t* spec){
 
 bool udp_get_spec(unsigned int command, unsigned char* data){
 
-    int off_set = command - 26;
+    int off_set = command - 31;
     //Open file
     FILE* fp = fopen("public/json_data/SPEC.json", "r");
     if (fp == NULL) { 
@@ -1937,6 +1962,9 @@ bool update_pr_telemetry(char* request_content, struct backend_data_t* backend, 
         backend->p_rover[teamIndex].sim_running = true;
         backend->p_rover[teamIndex].sim_completed = false;
         backend->p_rover[teamIndex].sim_paused = false;
+        backend->p_rover[teamIndex].distance_traveled = 0;
+        prPrevX = 0;
+        prPrevY = 0;
         printf("Team %d PR Started\n", teamIndex);
     } else if(strncmp(request_content, "end_team=", strlen("end_team=")) == 0) {
         // End PR with current team
@@ -2310,7 +2338,7 @@ void simulate_external_temperature(struct backend_data_t* backend){
 
 bool udp_get_telemetry(unsigned int command, unsigned int team_number, unsigned char* data){
 
-    int off_set = command - 58;
+    int off_set = command - 63;
 
     char start_path[50] = "public/json_data/teams/";
     char team[3] = "";
@@ -2392,7 +2420,7 @@ bool udp_get_telemetry(unsigned int command, unsigned int team_number, unsigned 
 }
 
 bool udp_get_pr_telemetry(unsigned int command, unsigned char* data, struct backend_data_t* backend){
-    int off_set = command - 119;
+    int off_set = command - 124;
 
     if(off_set > 47){
         printf("Not yet implemented.\n");
@@ -2469,7 +2497,7 @@ bool udp_get_pr_telemetry(unsigned int command, unsigned char* data, struct back
 }
 
 bool udp_get_eva(unsigned int command, unsigned int team_number, unsigned char* data){
-    int off_set = command - 103;
+    int off_set = command - 108;
 
     char start_path[50] = "public/json_data/teams/";
     char team[3] = "";
@@ -2629,6 +2657,32 @@ bool udp_get_eva(unsigned int command, unsigned int team_number, unsigned char* 
 bool udp_post_pr_telemetry(unsigned int command, unsigned char* data, struct backend_data_t* backend){
     if (backend->running_pr_sim < 0) {
         return false;
+    }
+
+    if (command == 1117) {
+        //Calculate distance traveled 
+        float distToAdd = 0;
+
+        if (prPrevX != 0 || prPrevY != 0) {
+            float xDiff = backend->p_rover[backend->running_pr_sim].current_pos_x - prPrevX;
+            float yDiff = backend->p_rover[backend->running_pr_sim].current_pos_y - prPrevY;
+
+            distToAdd = xDiff * xDiff + yDiff * yDiff;
+            distToAdd = sqrt(distToAdd);
+        } 
+
+        backend->p_rover[backend->running_pr_sim].distance_traveled += distToAdd;
+
+        prPrevX = backend->p_rover[backend->running_pr_sim].current_pos_x;
+        prPrevY = backend->p_rover[backend->running_pr_sim].current_pos_y;
+
+        //Calulcate distance from base here as well
+        //Base coords: -5663.90 -10080.10
+        float xDiff = backend->p_rover[backend->running_pr_sim].current_pos_x - (-5663.90);
+        float yDiff = backend->p_rover[backend->running_pr_sim].current_pos_y - (-10080.10);
+        backend->p_rover[backend->running_pr_sim].distance_from_base = sqrt(xDiff * xDiff + yDiff * yDiff);
+
+        return true;
     }
     
     int off_set = command - 1103;

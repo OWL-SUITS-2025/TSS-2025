@@ -9,6 +9,17 @@
 #include <stdio.h>
 
 ///////////////////////////////////////////////////////////////////////////////////
+//                                  LTV POI Locations
+///////////////////////////////////////////////////////////////////////////////////
+
+#define ROVER_POI_1_X -5635.00
+#define ROVER_POI_1_Y -9970.00
+#define ROVER_POI_2_X -5610.00
+#define ROVER_POI_2_Y -9971.00
+#define ROVER_POI_3_X -5615.00
+#define ROVER_POI_3_Y -9995.00
+
+///////////////////////////////////////////////////////////////////////////////////
 //                                  Simulation Values
 ///////////////////////////////////////////////////////////////////////////////////
 
@@ -52,7 +63,7 @@
 #define THROTTLE_CONSUMPTION_RATE 0.01f
 #define THROTTLE_MAX_ABS_VALUE 100.0f
 
-#define PASSIVE_POWER_CONSUMPTION_RATE 0.0005f
+#define PASSIVE_POWER_CONSUMPTION_RATE 0.009f
 
 #define MAX_SOLAR_PANEL_DUST_ACCUM 100.0f
 #define PANEL_DUST_ACCUM_RATE 0.01f
@@ -110,7 +121,7 @@
 #define PR_FAN_RPM 30000.0f
 
 //Other
-#define exp7           10000000i64     //1E+7     
+#define exp7           10000000i64    //1E+7     
 #define exp9         1000000000i64     //1E+9
 #define w2ux 116444736000000000i64     //1.jan1601 to 1.jan1970
 
@@ -176,7 +187,13 @@ struct rover_data_t {
 
     float pos_x;
     float pos_y;
-    int   prev_qr_scan;
+    float poi_1_x;
+    float poi_1_y;
+    float poi_2_x;
+    float poi_2_y;
+    float poi_3_x;
+    float poi_3_y;
+    char*  ping;
     // other stuff
 
 };
@@ -463,5 +480,9 @@ void handle_udp_post_request(unsigned int command, char* data, char* request, st
 //Helper functions
 void reverse_bytes(unsigned char* bytes);
 bool big_endian();
+
+//Helper vars for calculating distance travelled
+extern float prPrevX;
+extern float prPrevY;
 
 #endif
