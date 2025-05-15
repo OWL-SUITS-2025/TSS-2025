@@ -7,11 +7,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <time.h>
+//#include <time.h>
 #include "cJSON.h"
 
 // Networking Headers
 #include "network.h"
+struct profile_context_t profile_context;
 
 // Application
 #include "server_data.h"
@@ -28,36 +29,6 @@
 // Uncomment this for extra print statements
 //#define VERBOSE_MODE 
 //#define TESTING_MODE
-
-///////////////////////////////////////////////////////////////////////////////////
-//                          Windows Functions
-///////////////////////////////////////////////////////////////////////////////////
-
-
-#if defined(_WIN32)
-//This is from https://stackoverflow.com/questions/5404277/porting-clock-gettime-to-windows
-void unix_time(struct timespec *spec)
-{  __int64 wintime; GetSystemTimeAsFileTime((FILETIME*)&wintime); 
-   wintime -=w2ux;  spec->tv_sec  =wintime / exp7;                 
-                    spec->tv_nsec =wintime % exp7 *100;
-}
-int clock_gettime(int fake, struct timespec *spec)
-{  static  struct timespec startspec; static double ticks2nano;
-   static __int64 startticks, tps =0;    __int64 tmp, curticks;
-   QueryPerformanceFrequency((LARGE_INTEGER*)&tmp); //some strange system can
-   if (tps !=tmp) { tps =tmp; //init ~~ONCE         //possibly change freq ?
-                    QueryPerformanceCounter((LARGE_INTEGER*)&startticks);
-                    unix_time(&startspec); ticks2nano =(double)exp9 / tps; }
-   QueryPerformanceCounter((LARGE_INTEGER*)&curticks); curticks -=startticks;
-   spec->tv_sec  =startspec.tv_sec   +         (curticks / tps);
-   spec->tv_nsec =startspec.tv_nsec  + (double)(curticks % tps) * ticks2nano;
-         if (!(spec->tv_nsec < exp9)) { spec->tv_sec++; spec->tv_nsec -=exp9; }
-   return 0;
-}
-
-#define CLOCK_REALTIME 0
-#endif
-
 
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -76,25 +47,13 @@ void tss_to_unreal();
 
 enum { NS_PER_SECOND = 1000000000 };
 
-void sub_timespec(struct timespec t1, struct timespec t2, struct timespec *td)
-{
-    td->tv_nsec = t2.tv_nsec - t1.tv_nsec;
-    td->tv_sec  = t2.tv_sec - t1.tv_sec;
-    if (td->tv_sec > 0 && td->tv_nsec < 0)
-    {
-        td->tv_nsec += NS_PER_SECOND;
-        td->tv_sec--;
-    }
-    else if (td->tv_sec < 0 && td->tv_nsec > 0)
-    {
-        td->tv_nsec -= NS_PER_SECOND;
-        td->tv_sec++;
-    }
-}
-
 int main(int argc, char* argv[])
 {
+
+    int set_dust_rate;
     printf("Hello World\n\n");
+
+    clock_setup(&profile_context);
 
     // Windows Specific Init
     #if defined(_WIN32)
@@ -108,9 +67,11 @@ int main(int argc, char* argv[])
     FILE *fptr;
 
     // ----------------- Begin Main Program Space -------------------------
-    struct timespec time_begin, time_end, time_delta;
+    // struct timespec time_begin, time_end, time_delta;
 
-    clock_gettime(CLOCK_REALTIME, &time_begin);
+    double time_begin = get_wall_clock(&profile_context);
+
+    //clock_gettime(CLOCK_REALTIME, &time_begin);
 
     bool udp_only = false;
     bool protected_mode = false;
@@ -255,12 +216,22 @@ int main(int argc, char* argv[])
             unsigned int time = 0;
             unsigned int command = 0;
             char data[4] = {0};
+            char* dust_ip = "192.168.51.201";
+            
+      
+            printf("UDP IP: %s\n", get_client_udp_address(client));
 
             get_contents(client->udp_request, &time, &command, data);
-            if(!((command >= 1100 && command <= 1130) || command == 3000 || command == 0)) {
-                printf("Command: %u\n", command);
+
+            //if(!((command >= 1100 && command <= 1130) || command == 3000 || command == 0)) {
+            if((strcmp(get_client_udp_address(client), dust_ip) != 0)){
+                printf("Command: %d\n", command);
                 
                 int client_index = get_client_index(client); //check if our client is new or not
+
+                if (!client) {
+                    fprintf(stderr, "[ERROR] NULL client passed to rate_limit_required\n");
+                }
                 
                 if(client_index == -1) { //case that client isnt stored yet
                     
@@ -270,10 +241,13 @@ int main(int argc, char* argv[])
 
                 } else { //case that it is stored
 
-                    if(rate_limit_required(client)) { //if we need to rate limit we dont update the time
+                    set_dust_rate = (((command >= 1100 && command <= 1130) || command == 3000 || command == 0)) ? 0 : 1; //if we are getting a dust command we set the rate to 0, otherwise we set it to 1
+                    
+                    if(rate_limit_required(client, set_dust_rate)) { //if we need to rate limit we dont update the time
                         
                         printf("Rate Limit hit\n");
                         continue; //this drops the udp message
+
                     } else {
 
                         //otherwise the client is able to send so we just update its' time
@@ -309,7 +283,7 @@ int main(int argc, char* argv[])
                 int buffer_size = 0;
 
                 //Send lidar
-                if(command == 167 && backend->running_pr_sim >= 0){
+                if(command == 172 && backend->running_pr_sim >= 0){
                     response_buffer = malloc(sizeof(backend->p_rover[backend->running_pr_sim].lidar) + 8);
                     buffer_size = sizeof(backend->p_rover[backend->running_pr_sim].lidar) + 8;
 
@@ -384,13 +358,10 @@ int main(int argc, char* argv[])
         
         // Send telemetry values to Unreal if there's an address saved
         if(unreal){
-            clock_gettime(CLOCK_REALTIME, &time_end);
-            sub_timespec(time_begin, time_end, &time_delta);
-
-            if(time_delta.tv_nsec > 200000000){
+            double time_end = get_wall_clock(&profile_context);
+            if ((time_end - time_begin) > 0.2) {
                 tss_to_unreal(udp_socket, unreal_addr, unreal_addr_len, backend);
-                
-                clock_gettime(CLOCK_REALTIME, &time_begin);
+                time_begin = time_end;
             }
         }
 
